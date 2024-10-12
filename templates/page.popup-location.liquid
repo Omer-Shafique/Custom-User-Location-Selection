@@ -1,0 +1,249 @@
+  <!doctype html>
+  <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Pop-Up Demo with Draggable Marker and City Selector</title>
+      <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+      <link rel="stylesheet" type="text/css" href="{{ 'location_popup_styling.css' | asset_url }}">
+      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    </head>
+    <body>
+      <div id="popup" style="display: none;">
+        <div class="popup-overlay">
+          <div class="popup-content">
+            <img
+              src="https://katib.pk/cdn/shop/files/Katib_logo_website_copy_180x.png?v=1692775050"
+              alt="Popup Image"
+              class="popup-image"
+            >
+            <!--
+              <h5 style="text-align: center; color: #080808; font-size: 24px; font-weight: bold; margin-top: 20px;">
+                SELECT YOUR LOCATION
+              </h5>
+            -->
+
+            <div class="form-container">
+              <div class="dropdown-container">
+                <input id="city-search" class="dropdown-search" type="text" placeholder="Search city...">
+                <span id="city-arrow" class="icon-right">
+                  <i class="fa-solid fa-caret-down"></i>
+                </span>
+                <div id="city-dropdown" class="dropdown-content"></div>
+              </div>
+
+              <div class="dropdown-container">
+                <input id="area-search" class="dropdown-search" type="text" placeholder="Search area...">
+                <span class="icon-right">
+                  <i class="fas fa-search"></i>
+                </span>
+                <div id="area-dropdown" class="dropdown-content"></div>
+              </div>
+
+              <!-- Info button added here -->
+              <div class="info-button">
+                <i class="fas fa-info-circle info-icon"></i>
+                <!-- Info icon -->
+                <b>For better Service </b> &nbsp;<em><b>please select the exact location on the map</b></em>
+              </div>
+            </div>
+
+            <div id="map"></div>
+            <button id="confirm-location" class="confirm-btn">Confirm</button>
+          </div>
+        </div>
+      </div>
+
+      <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+      <script src="{{ 'city_areas.js' | asset_url }}"></script>
+      <script src="{{ 'areaCenters.js' | asset_url }}"></script>
+      <script>
+      window.onload = function() {
+          var popup = document.getElementById('popup');
+          popup.style.display = 'block';
+
+          var cityBounds = {
+              karachi: [[24.85, 66.85], [25.05, 67.2]],
+              lahore: [[31.45, 74.2], [31.65, 74.4]],
+              islamabad: [[33.65, 72.9], [33.85, 73.2]],
+              faisalabad: [[31.35, 73], [31.55, 73.25]],
+              multan: [[30.15, 71.35], [30.35, 71.55]],
+              bahawalpur: [[29.35, 71.45], [29.65, 71.85]],
+              hyderabad: [[25.25, 68.25], [25.45, 68.55]],
+              other_cities: [[34.0, 71.5], [34.2, 71.8]],
+
+          };
+
+      var map = L.map('map').setView([24.8607, 67.0011], 15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      var marker = L.marker([24.8607, 67.0011], { draggable: true }).addTo(map);
+
+      function updateAddress(lat, lng) {
+          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`)
+              .then(response => response.json())
+              .then(data => {
+                  const address = data.display_name || 'Address not found';
+                  console.log('Address:', address);
+                  document.getElementById('address').textContent = address;
+              })
+              .catch(error => {
+                  console.error('Error fetching address:', error);
+                  document.getElementById('address').textContent = 'Address not found';
+              });
+      }
+
+      function createDropdownOptions(dropdownId, options, onSelect) {
+          var dropdown = document.getElementById(dropdownId);
+          dropdown.innerHTML = ''; // Clear previous options
+
+          options.forEach(function(option) {
+              var item = document.createElement('div');
+              item.className = 'dropdown-item';
+              item.textContent = option;
+              item.onclick = function() {
+                  document.getElementById(dropdownId.replace('dropdown', 'search')).value = option;
+                  dropdown.style.display = 'none';
+                  onSelect(option);
+              };
+              dropdown.appendChild(item);
+          });
+      }
+
+      function filterDropdown(inputId, dropdownId, items, onSelect) {
+          var input = document.getElementById(inputId);
+          var dropdown = document.getElementById(dropdownId);
+
+          input.addEventListener('input', function() {
+              var filter = input.value.toLowerCase();
+              var filteredItems = items.filter(function(item) {
+                  return item.toLowerCase().startsWith(filter); // Filter items starting with input
+              });
+              createDropdownOptions(dropdownId, filteredItems, onSelect);
+              dropdown.style.display = filteredItems.length ? 'block' : 'none';
+          });
+
+          input.addEventListener('focus', function() {
+              var dropdownToShow = inputId === 'city-search' ? 'city-dropdown' : 'area-dropdown';
+              var dropdownToHide = inputId === 'city-search' ? 'area-dropdown' : 'city-dropdown';
+              document.getElementById(dropdownToHide).style.display = 'none';
+              var itemsList = inputId === 'city-search' ? Object.keys(cityBounds) : (cityAreas[document.getElementById('city-search').value] || []);
+              createDropdownOptions(dropdownToShow, itemsList, onSelect);
+              document.getElementById(dropdownToShow).style.display = 'block';
+          });
+
+          input.addEventListener('blur', function() {
+              setTimeout(function() {
+                  document.getElementById(dropdownId).style.display = 'none';
+              }, 200); // Delay to allow click on dropdown items
+          });
+      }
+
+      function updateAreaDropdown(city) {
+          var areaDropdown = document.getElementById('area-dropdown');
+          if (cityAreas[city]) {
+              filterDropdown('area-search', 'area-dropdown', cityAreas[city], function(area) {
+                  var areaCenter = areaCenters[area];
+                  if (areaCenter) {
+                      map.setView(areaCenter, 15);
+                      marker.setLatLng(areaCenter);
+                      updateAddress(areaCenter[0], areaCenter[1]);
+                  }
+              });
+          } else {
+              areaDropdown.innerHTML = '';
+              areaDropdown.style.display = 'none'; // Hide area dropdown if no areas
+          }
+      }
+
+      filterDropdown('city-search', 'city-dropdown', Object.keys(cityBounds), function(city) {
+          updateAreaDropdown(city);
+          var bounds = cityBounds[city];
+          map.fitBounds(bounds);
+          var center = map.getCenter();
+          marker.setLatLng(center);
+          updateAddress(center.lat, center.lng);
+      });
+
+      // Initialize area search dropdown functionality
+      filterDropdown('area-search', 'area-dropdown', [], function(area) {
+          var areaCenter = areaCenters[area];
+          if (areaCenter) {
+              map.setView(areaCenter, 15);
+              marker.setLatLng(areaCenter);
+              updateAddress(areaCenter[0], areaCenter[1]);
+          }
+      });
+
+      document.getElementById('city-arrow').addEventListener('click', function() {
+          const dropdown = document.getElementById('city-dropdown');
+          const arrow = document.getElementById('city-arrow');
+          if (dropdown.style.display === 'block') {
+              dropdown.style.display = 'none';
+              arrow.classList.remove('open');
+          } else {
+              dropdown.style.display = 'block';
+              arrow.classList.add('open');
+          }
+      });
+
+      map.on('click', function(e) {
+          var latlng = e.latlng; // Get the latlng of the click event
+          marker.setLatLng(latlng); // Move the marker to the clicked position
+          map.setView(latlng, 25); // Center the map on the clicked position
+          updateAddress(latlng.lat, latlng.lng); // Update the address display
+      });
+
+      document.getElementById('confirm-location').addEventListener('click', function() {
+          var latlng = marker.getLatLng();
+          console.log('Confirm button clicked');
+          console.log('Lat:', latlng.lat, 'Lng:', latlng.lng);
+
+          // Save location to local storage
+          localStorage.setItem('selectedLocation', JSON.stringify({ lat: latlng.lat, lng: latlng.lng }));
+
+          // Update cart notes with location data
+          fetch('/cart/update.js', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json'
+              },
+              body: JSON.stringify({
+                  updates: [], // Ensure this is formatted correctly for updating the cart
+                  note: `${latlng.lat},${latlng.lng}` // Update cart note
+              })
+          })
+          .then(response => response.json())
+          .then(data => {
+              if (data) {
+                  var referrer = document.referrer;
+                  console.log('Referrer:', referrer);
+
+                  if (referrer.includes('katib.pk/cart')) {
+                      window.location.href = 'https://katib.pk/cart';
+                  } else if (referrer.includes('katib.pk/products/')) {
+                      var parts = referrer.split('katib.pk/products/');
+                      var productId = parts.length > 1 ? parts[1].split('/')[0] : null;
+
+                      if (productId) {
+                          window.location.href = 'https://katib.pk/products/' + productId;
+                      } else {
+                          window.location.href = 'https://katib.pk/';
+                      }
+                  }
+              } else {
+                  alert('Failed to add location to cart notes.');
+              }
+              popup.style.display = 'none';
+          })
+          .catch(error => {
+              console.error('Error adding location to cart notes:', error);
+          });
+      });
+  };
+      </script>
+    </body>
+  </html>
